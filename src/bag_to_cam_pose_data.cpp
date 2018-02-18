@@ -13,26 +13,9 @@
 
 #include <tclap/CmdLine.h>
 
+#include <fstream>
 
-// A struct to hold the synchronized camera data
-// Struct to store stereo data
-class CamPose
-{
-
-public:
-    sensor_msgs::Image::ConstPtr image;
-    geometry_msgs::PoseWithCovarianceStamped::ConstPtr pose;
-
-    CamPose(
-        const sensor_msgs::Image::ConstPtr &image,
-        const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &pose
-    ) :
-        image(image),
-        pose(pose)
-    {}
-};
-
-std::vector<CamPose> cam_poses;
+#include "libnpy.hpp"
 
 /**
  * Inherits from message_filters::SimpleFilter<M>
@@ -48,14 +31,44 @@ public:
     }
 };
 
+// Global variables for storing the necessary data
+std::vector<unsigned long> img_shape;
+std::vector<uint8_t> img_data;
+std::vector<unsigned long> pose_shape;
+std::vector<double> pose_data;
+
 // Callback for synchronized messages
 void callback(
     const sensor_msgs::Image::ConstPtr& image,
     const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& pose)
 {
-    ROS_INFO_STREAM(image->header.stamp << " : " << pose->header.stamp);
-    CamPose cp(image, pose);
-    cam_poses.push_back(cp);
+    // First deal with the image data. 
+    if (img_shape.size() == 0) 
+    {
+        img_shape.push_back(0);
+        img_shape.push_back((unsigned long) image->height);
+        img_shape.push_back((unsigned long) image->width);
+    }
+    // Increase number of images in shape
+    img_shape[0]++;
+    // Add image to data array
+    img_data.insert(std::end(img_data), std::begin(image->data), std::end(image->data));
+
+    // Now deal with the pose data.
+    if (pose_shape.size() == 0) 
+    {
+        pose_shape.push_back(0);
+        // 3 for the position and another 4 for the quaternion (xyz,xyzw)
+        pose_shape.push_back(7);
+    }
+    pose_shape[0]++;
+    pose_data.push_back(pose->pose.pose.position.x);
+    pose_data.push_back(pose->pose.pose.position.y);
+    pose_data.push_back(pose->pose.pose.position.z);
+    pose_data.push_back(pose->pose.pose.orientation.x);
+    pose_data.push_back(pose->pose.pose.orientation.y);
+    pose_data.push_back(pose->pose.pose.orientation.z);
+    pose_data.push_back(pose->pose.pose.orientation.w);
 }
 
 
@@ -78,10 +91,18 @@ int main(int argc, char const *argv[])
         "",
         "string"
     );
-    ValueArg<std::string> output_file_arg(
-        "o",
-        "output_file",
-        "The path to to the output file.",
+    ValueArg<std::string> output_image_file_arg(
+        "x",
+        "output_image_file",
+        "The path to to the output file containing the images.",
+        true,
+        "",
+        "string"
+    );
+    ValueArg<std::string> output_pose_file_arg(
+        "y",
+        "output_pose_file",
+        "The path to to the output file containing the poses.",
         true,
         "",
         "string"
@@ -103,7 +124,8 @@ int main(int argc, char const *argv[])
         "string"
     );
     cmdline.add(input_bag_arg);
-    cmdline.add(output_file_arg);
+    cmdline.add(output_image_file_arg);
+    cmdline.add(output_pose_file_arg);
     cmdline.add(image_topic_arg);
     cmdline.add(pose_topic_arg);
     cmdline.parse(argc, argv);
@@ -128,7 +150,7 @@ int main(int argc, char const *argv[])
 
     const std::string image_topic = image_topic_arg.getValue();
     const std::string pose_topic  = pose_topic_arg.getValue();
-
+    
     // Load all messages into our stereo dataset
     for (const rosbag::MessageInstance& m : view)
     {
@@ -151,4 +173,9 @@ int main(int argc, char const *argv[])
         }
     }
     bag.close();
+
+    // Save image and pose data to numpy format
+    npy::SaveArrayAsNumpy(output_image_file_arg.getValue(), false, img_shape.size(), &img_shape[0], img_data);
+    npy::SaveArrayAsNumpy(output_pose_file_arg.getValue(), false, pose_shape.size(), &pose_shape[0], pose_data);
 }
+

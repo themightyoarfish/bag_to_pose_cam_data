@@ -16,6 +16,8 @@ catkin_package(
     CATKIN_DEPENDS
     sensor_msgs
     geometry_msgs
+    INCLUDE_DIRS
+    include
 )
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -39,7 +41,9 @@ endif()
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-# include_directories(include)
+include_directories(
+    include/
+)
 include_directories(
     SYSTEM
     ${catkin_INCLUDE_DIRS}
