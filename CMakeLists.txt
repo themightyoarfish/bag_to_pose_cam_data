@@ -20,7 +20,6 @@ catkin_package(
     include
 )
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 11)
 ## Compiler Options
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -w")
@@ -73,3 +72,20 @@ foreach(TARGET
 )
     target_link_libraries(${TARGET} ${catkin_LIBRARIES})
 endforeach()
+
+install(TARGETS bag_to_cam_pose_data
+    RUNTIME
+    DESTINATION /usr/local/bin
+)
+
+# uninstall target
+if(NOT TARGET uninstall)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake_uninstall.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+        IMMEDIATE @ONLY)
+
+    add_custom_target(uninstall
+        COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+endif()
+
