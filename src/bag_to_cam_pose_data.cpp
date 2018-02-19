@@ -42,12 +42,13 @@ void callback(
     const sensor_msgs::Image::ConstPtr& image,
     const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& pose)
 {
-    // First deal with the image data. 
-    if (img_shape.size() == 0) 
+    // First deal with the image data.
+    if (img_shape.size() == 0)
     {
         img_shape.push_back(0);
         img_shape.push_back((unsigned long) image->height);
         img_shape.push_back((unsigned long) image->width);
+        img_shape.push_back((unsigned long) 3);
     }
     // Increase number of images in shape
     img_shape[0]++;
@@ -55,7 +56,7 @@ void callback(
     img_data.insert(std::end(img_data), std::begin(image->data), std::end(image->data));
 
     // Now deal with the pose data.
-    if (pose_shape.size() == 0) 
+    if (pose_shape.size() == 0)
     {
         pose_shape.push_back(0);
         // 3 for the position and another 4 for the quaternion (xyz,xyzw)
@@ -150,7 +151,7 @@ int main(int argc, char const *argv[])
 
     const std::string image_topic = image_topic_arg.getValue();
     const std::string pose_topic  = pose_topic_arg.getValue();
-    
+
     // Load all messages into our stereo dataset
     for (const rosbag::MessageInstance& m : view)
     {
