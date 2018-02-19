@@ -26,8 +26,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -w")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -g -O0 -Wall -Wextra -fno-stack-protector")
 ## the flag for using the gold linker is only for gcc, won't work on clang
-set(CMAKE_CXX_FLAGS
-    "${CMAKE_CXX_FLAGS} -fuse-ld=gold -fopenmp -DPCL_ONLY_CORE_POINT_TYPES=ON -DNO_EXPLICIT_INSTANTIATIONS")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fuse-ld=gold")
 
 find_program(CCACHE_FOUND ccache)
 if(CCACHE_FOUND)
