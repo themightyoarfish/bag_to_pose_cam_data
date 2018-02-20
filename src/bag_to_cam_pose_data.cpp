@@ -39,6 +39,29 @@ std::vector<unsigned long> img_shape;
 std::vector<uint8_t> img_data;
 std::vector<unsigned long> pose_shape;
 std::vector<double> pose_data;
+bool create_single_files = false;
+std::string output_image_path;
+std::string output_pose_path;
+int output_cnt;
+
+
+void write_data(const std::string& output_image_path, const std::string& output_pose_path, int& output_cnt)
+{
+    if (pose_data.size() == 0)
+    {
+        return;
+    }
+    // Output the npy files
+    npy::SaveArrayAsNumpy(output_image_path + std::to_string(output_cnt), false, img_shape.size(), &img_shape[0], img_data);
+    npy::SaveArrayAsNumpy(output_pose_path + std::to_string(output_cnt), false, pose_shape.size(), &pose_shape[0], pose_data);
+    output_cnt++;
+    img_shape.clear();
+    img_data.clear();
+    pose_shape.clear();
+    pose_data.clear();
+}
+
+
 
 // Callback for synchronized messages
 void callback(
@@ -77,22 +100,19 @@ void callback(
     pose_data.push_back(roll);
     pose_data.push_back(pitch);
     pose_data.push_back(yaw);
-}
-void write_data(const std::string& output_image_path, const std::string& output_pose_path, int& output_cnt)
-{ 
-    if (pose_data.size() == 0)
+
+    if (create_single_files)
     {
-        return;
+        std::stringstream ss_img;
+        ss_img << output_image_path << std::setfill('0') << std::setw(6) << output_cnt << ".npy";
+
+        std::stringstream ss_pose;
+        ss_pose << output_image_path << std::setfill('0') << std::setw(6) << output_cnt << ".npy";
+
+        write_data(ss_img.str(), ss_pose.str(), output_cnt);
     }
-    // Output the npy files
-    npy::SaveArrayAsNumpy(output_image_path + std::to_string(output_cnt), false, img_shape.size(), &img_shape[0], img_data);
-    npy::SaveArrayAsNumpy(output_pose_path + std::to_string(output_cnt), false, pose_shape.size(), &pose_shape[0], pose_data);
-    output_cnt++;
-    img_shape.clear();
-    img_data.clear();
-    pose_shape.clear();
-    pose_data.clear();
 }
+
 
 int main(int argc, char const *argv[])
 {
@@ -116,7 +136,7 @@ int main(int argc, char const *argv[])
     ValueArg<std::string> output_image_file_arg(
         "x",
         "output_image_file",
-        "The path to to the output file containing the images.",
+        "The path to to the stem of the output file containing the images. Do not append .npy. Do only name path to the stem name as there will be appended to it.",
         true,
         "",
         "string"
@@ -124,7 +144,7 @@ int main(int argc, char const *argv[])
     ValueArg<std::string> output_pose_file_arg(
         "y",
         "output_pose_file",
-        "The path to to the output file containing the poses.",
+        "The path to to the stem of the output file containing the poses. Do not append .npy. Do only name path to the stem name as there will be appended to it.",
         true,
         "",
         "string"
@@ -153,12 +173,19 @@ int main(int argc, char const *argv[])
         86400.0,
         "double"
     );
+    SwitchArg create_single_files_arg(
+        "P",
+        "create_single_files",
+        "A switch that will overwrite the split_after arg and output all data points in single files."
+    );
+
     cmdline.add(input_bag_arg);
     cmdline.add(output_image_file_arg);
     cmdline.add(output_pose_file_arg);
     cmdline.add(image_topic_arg);
     cmdline.add(pose_topic_arg);
     cmdline.add(split_after_arg);
+    cmdline.add(create_single_files_arg);
     cmdline.parse(argc, argv);
 
     rosbag::Bag bag;
@@ -182,35 +209,41 @@ int main(int argc, char const *argv[])
     const std::string image_topic = image_topic_arg.getValue();
     const std::string pose_topic  = pose_topic_arg.getValue();
 
+    create_single_files = create_single_files_arg.getValue();
+    output_image_path = output_image_file_arg.getValue();
+    output_pose_path = output_pose_file_arg.getValue();
+
     ros::Duration recording_duration(split_after_arg.getValue(), 0.0);
     //std::cout << "split after: " << split_after_arg.getValue() << " ";
     ros::Time start, end;
     bool is_recording = false;
-    int output_cnt = 0;
+    output_cnt = 0;
 
     bool first_time = true;
-
     // Load all messages into our stereo dataset
     for (const rosbag::MessageInstance& m : view)
     {
-        ros::Time t = m.getTime();
+        if (not create_single_files)
+        {
+            ros::Time t = m.getTime();
 
-        // If time is outside of window.
-        if (!first_time and !(start <= t and t < end))
-        {
-            // std::cout << " -- dumping both files (" << output_image_file_arg.getValue() + std::to_string(output_cnt) << ")";
-            write_data(output_image_file_arg.getValue(), output_pose_file_arg.getValue(), output_cnt);
-            is_recording = false;
-        }
-        
-        // If we are currently not recording initialize the window.
-        if (not is_recording)
-        {
-            start = t;
-            end = t + recording_duration;
-            is_recording = true;
-            first_time = false;
-            // std::cout << "opening window from " << start << " to " << end;
+            // If time is outside of window.
+            if (!first_time and !(start <= t and t < end))
+            {
+                // std::cout << " -- dumping both files (" << output_image_file_arg.getValue() + std::to_string(output_cnt) << ")";
+                write_data(output_image_file_arg.getValue(), output_pose_file_arg.getValue(), output_cnt);
+                is_recording = false;
+            }
+
+            // If we are currently not recording initialize the window.
+            if (not is_recording)
+            {
+                start = t;
+                end = t + recording_duration;
+                is_recording = true;
+                first_time = false;
+                // std::cout << "opening window from " << start << " to " << end;
+            }
         }
 
         if (m.getTopic() == image_topic || ("/" + m.getTopic() == image_topic))
@@ -237,6 +270,8 @@ int main(int argc, char const *argv[])
     bag.close();
 
     // Output the rest.
-    write_data(output_image_file_arg.getValue(), output_pose_file_arg.getValue(), output_cnt);
+    if (not create_single_files)
+    {
+        write_data(output_image_path, output_pose_path, output_cnt);
+    }
 }
-
