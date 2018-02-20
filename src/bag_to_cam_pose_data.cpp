@@ -78,7 +78,21 @@ void callback(
     pose_data.push_back(pitch);
     pose_data.push_back(yaw);
 }
-
+void write_data(const std::string& output_image_path, const std::string& output_pose_path, int& output_cnt)
+{ 
+    if (pose_data.size() == 0)
+    {
+        return;
+    }
+    // Output the npy files
+    npy::SaveArrayAsNumpy(output_image_path + std::to_string(output_cnt), false, img_shape.size(), &img_shape[0], img_data);
+    npy::SaveArrayAsNumpy(output_pose_path + std::to_string(output_cnt), false, pose_shape.size(), &pose_shape[0], pose_data);
+    output_cnt++;
+    img_shape.clear();
+    img_data.clear();
+    pose_shape.clear();
+    pose_data.clear();
+}
 
 int main(int argc, char const *argv[])
 {
@@ -131,11 +145,20 @@ int main(int argc, char const *argv[])
         "/robot_pose_ekf/odom_combined",
         "string"
     );
+    ValueArg<double> split_after_arg(
+        "s",
+        "split_after",
+        "The number of seconds after which a new npy file is created.",
+        false,
+        86400.0,
+        "double"
+    );
     cmdline.add(input_bag_arg);
     cmdline.add(output_image_file_arg);
     cmdline.add(output_pose_file_arg);
     cmdline.add(image_topic_arg);
     cmdline.add(pose_topic_arg);
+    cmdline.add(split_after_arg);
     cmdline.parse(argc, argv);
 
     rosbag::Bag bag;
@@ -159,11 +182,40 @@ int main(int argc, char const *argv[])
     const std::string image_topic = image_topic_arg.getValue();
     const std::string pose_topic  = pose_topic_arg.getValue();
 
+    ros::Duration recording_duration(split_after_arg.getValue(), 0.0);
+    //std::cout << "split after: " << split_after_arg.getValue() << " ";
+    ros::Time start, end;
+    bool is_recording = false;
+    int output_cnt = 0;
+
+    bool first_time = true;
+
     // Load all messages into our stereo dataset
     for (const rosbag::MessageInstance& m : view)
     {
+        ros::Time t = m.getTime();
+
+        // If time is outside of window.
+        if (!first_time and !(start <= t and t < end))
+        {
+            // std::cout << " -- dumping both files (" << output_image_file_arg.getValue() + std::to_string(output_cnt) << ")";
+            write_data(output_image_file_arg.getValue(), output_pose_file_arg.getValue(), output_cnt);
+            is_recording = false;
+        }
+        
+        // If we are currently not recording initialize the window.
+        if (not is_recording)
+        {
+            start = t;
+            end = t + recording_duration;
+            is_recording = true;
+            first_time = false;
+            // std::cout << "opening window from " << start << " to " << end;
+        }
+
         if (m.getTopic() == image_topic || ("/" + m.getTopic() == image_topic))
         {
+            // std::cout << " -- reading image";
             sensor_msgs::Image::ConstPtr image = m.instantiate<sensor_msgs::Image>();
             if (image != NULL)
             {
@@ -173,17 +225,18 @@ int main(int argc, char const *argv[])
 
         if (m.getTopic() == pose_topic || ("/" + m.getTopic() == pose_topic))
         {
+            // std::cout << " -- reading pose";
             geometry_msgs::PoseWithCovarianceStamped::ConstPtr pose = m.instantiate<geometry_msgs::PoseWithCovarianceStamped>();
             if (pose != NULL)
             {
                 pose_sub.newMessage(pose);
             }
         }
+        // std::cout << std::endl;
     }
     bag.close();
 
-    // Save image and pose data to numpy format
-    npy::SaveArrayAsNumpy(output_image_file_arg.getValue(), false, img_shape.size(), &img_shape[0], img_data);
-    npy::SaveArrayAsNumpy(output_pose_file_arg.getValue(), false, pose_shape.size(), &pose_shape[0], pose_data);
+    // Output the rest.
+    write_data(output_image_file_arg.getValue(), output_pose_file_arg.getValue(), output_cnt);
 }
 
