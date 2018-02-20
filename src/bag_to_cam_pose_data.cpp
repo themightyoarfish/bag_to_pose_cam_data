@@ -107,7 +107,7 @@ void callback(
         ss_img << output_image_path << std::setfill('0') << std::setw(6) << output_cnt << ".npy";
 
         std::stringstream ss_pose;
-        ss_pose << output_image_path << std::setfill('0') << std::setw(6) << output_cnt << ".npy";
+        ss_pose << output_pose_path << std::setfill('0') << std::setw(6) << output_cnt << ".npy";
 
         write_data(ss_img.str(), ss_pose.str(), output_cnt);
     }
