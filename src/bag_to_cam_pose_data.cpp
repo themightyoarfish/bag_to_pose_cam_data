@@ -17,6 +17,9 @@
 
 #include "libnpy.hpp"
 
+#include <tf/transform_datatypes.h>
+
+
 /**
  * Inherits from message_filters::SimpleFilter<M>
  * to use protected signalMessage function
@@ -59,17 +62,21 @@ void callback(
     if (pose_shape.size() == 0)
     {
         pose_shape.push_back(0);
-        // 3 for the position and another 4 for the quaternion (xyz,xyzw)
-        pose_shape.push_back(7);
+        // 3 for the position and another 3 for the rotation (xyzrpy)
+        pose_shape.push_back(6);
     }
     pose_shape[0]++;
+
+    tf::Quaternion q;
+    tf::quaternionMsgToTF(pose->pose.pose.orientation, q);
+    double roll, pitch, yaw;
+    tf::Matrix3x3(q).getRPY(roll, pitch, yaw);
     pose_data.push_back(pose->pose.pose.position.x);
     pose_data.push_back(pose->pose.pose.position.y);
     pose_data.push_back(pose->pose.pose.position.z);
-    pose_data.push_back(pose->pose.pose.orientation.x);
-    pose_data.push_back(pose->pose.pose.orientation.y);
-    pose_data.push_back(pose->pose.pose.orientation.z);
-    pose_data.push_back(pose->pose.pose.orientation.w);
+    pose_data.push_back(roll);
+    pose_data.push_back(pitch);
+    pose_data.push_back(yaw);
 }
 
 
