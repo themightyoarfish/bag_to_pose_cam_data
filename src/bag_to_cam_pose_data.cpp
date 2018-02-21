@@ -11,13 +11,14 @@
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
 
+#include <tf/transform_datatypes.h>
+
 #include <tclap/CmdLine.h>
+#include "libnpy.hpp"
 
 #include <fstream>
 
-#include "libnpy.hpp"
-
-#include <tf/transform_datatypes.h>
+#include <boost/filesystem.hpp>
 
 
 /**
@@ -40,8 +41,8 @@ std::vector<uint8_t> img_data;
 std::vector<unsigned long> pose_shape;
 std::vector<double> pose_data;
 bool create_single_files = false;
-std::string output_image_path;
-std::string output_pose_path;
+std::string output_image_path_string;
+std::string output_pose_path_string;
 int output_cnt;
 
 
@@ -51,9 +52,17 @@ void write_data(const std::string& output_image_path, const std::string& output_
     {
         return;
     }
+
+    std::stringstream ss_img;
+    ss_img << output_image_path << std::setfill('0') << std::setw(6) << output_cnt << ".npy";
+
+    std::stringstream ss_pose;
+    ss_pose << output_pose_path << std::setfill('0') << std::setw(6) << output_cnt << ".npy";
+
+
     // Output the npy files
-    npy::SaveArrayAsNumpy(output_image_path + std::to_string(output_cnt), false, img_shape.size(), &img_shape[0], img_data);
-    npy::SaveArrayAsNumpy(output_pose_path + std::to_string(output_cnt), false, pose_shape.size(), &pose_shape[0], pose_data);
+    npy::SaveArrayAsNumpy(ss_img.str(), false, img_shape.size(), &img_shape[0], img_data);
+    npy::SaveArrayAsNumpy(ss_pose.str(), false, pose_shape.size(), &pose_shape[0], pose_data);
     output_cnt++;
     img_shape.clear();
     img_data.clear();
@@ -103,25 +112,23 @@ void callback(
 
     if (create_single_files)
     {
-        std::stringstream ss_img;
-        ss_img << output_image_path << std::setfill('0') << std::setw(6) << output_cnt << ".npy";
-
-        std::stringstream ss_pose;
-        ss_pose << output_pose_path << std::setfill('0') << std::setw(6) << output_cnt << ".npy";
-
-        write_data(ss_img.str(), ss_pose.str(), output_cnt);
+        write_data(output_image_path_string, output_pose_path_string, output_cnt);
     }
 }
 
 
 int main(int argc, char const *argv[])
 {
+
     ros::Time::init();
 
     using TCLAP::CmdLine;
     using TCLAP::ValueArg;
     using TCLAP::ValuesConstraint;
     using TCLAP::SwitchArg;
+
+    // Namespace alias
+    namespace bfs = boost::filesystem;
 
     CmdLine cmdline("Bag to cam pose extractor");
 
@@ -133,18 +140,11 @@ int main(int argc, char const *argv[])
         "",
         "string"
     );
-    ValueArg<std::string> output_image_file_arg(
-        "x",
-        "output_image_file",
-        "The path to to the stem of the output file containing the images. Do not append .npy. Do only name path to the stem name as there will be appended to it.",
-        true,
-        "",
-        "string"
-    );
-    ValueArg<std::string> output_pose_file_arg(
-        "y",
-        "output_pose_file",
-        "The path to to the stem of the output file containing the poses. Do not append .npy. Do only name path to the stem name as there will be appended to it.",
+
+    ValueArg<std::string> output_directory_arg(
+        "d",
+        "output_directory",
+        "The path to where the images and poses should be put. A directory for the particular input will be created.",
         true,
         "",
         "string"
@@ -180,13 +180,13 @@ int main(int argc, char const *argv[])
     );
 
     cmdline.add(input_bag_arg);
-    cmdline.add(output_image_file_arg);
-    cmdline.add(output_pose_file_arg);
+    cmdline.add(output_directory_arg);
     cmdline.add(image_topic_arg);
     cmdline.add(pose_topic_arg);
     cmdline.add(split_after_arg);
     cmdline.add(create_single_files_arg);
     cmdline.parse(argc, argv);
+
 
     rosbag::Bag bag;
     bag.open(input_bag_arg.getValue(), rosbag::bagmode::Read);
@@ -209,12 +209,62 @@ int main(int argc, char const *argv[])
     const std::string image_topic = image_topic_arg.getValue();
     const std::string pose_topic  = pose_topic_arg.getValue();
 
+    bfs::path output_directory(output_directory_arg.getValue());
+    output_directory /= bfs::path(input_bag_arg.getValue()).stem();
+
+    // Create directory (if not existent) with the same name as the bagfile name
+    if (not bfs::exists(output_directory))
+    {
+        bfs::create_directory(output_directory);
+    }
+    else
+    {
+        if (not bfs::is_directory(output_directory))
+        {
+            throw std::runtime_error("Output folder cannot be created");
+        }
+    }
+
+    // Create a directory called images if not existent
+    bfs::path output_image_path(output_directory / bfs::path("images"));
+    if (not bfs::exists(output_image_path))
+    {
+        bfs::create_directory(output_image_path);
+    }
+    else
+    {
+        if (not bfs::is_directory(output_image_path))
+        {
+            throw std::runtime_error("Output image folder cannot be created");
+        }
+    }
+    ROS_INFO_STREAM("Writing images to directory: " << output_image_path);
+    // Add filename stem to path
+    output_image_path /= bfs::path("image");
+
+    // Create a directory called poses if not existent
+    bfs::path output_pose_path(output_directory / bfs::path("poses"));
+    if (not bfs::exists(output_pose_path))
+    {
+        bfs::create_directory(output_pose_path);
+    }
+    else
+    {
+        if (not bfs::is_directory(output_pose_path))
+        {
+            throw std::runtime_error("Output poses folder cannot be created");
+        }
+    }
+    ROS_INFO_STREAM("Writing poses to directory: " << output_pose_path);
+    // Add filename stem to path
+    output_pose_path /= bfs::path("pose");
+
+    output_image_path_string = output_image_path.string();
+    output_pose_path_string  = output_pose_path.string();
+
     create_single_files = create_single_files_arg.getValue();
-    output_image_path = output_image_file_arg.getValue();
-    output_pose_path = output_pose_file_arg.getValue();
 
     ros::Duration recording_duration(split_after_arg.getValue(), 0.0);
-    //std::cout << "split after: " << split_after_arg.getValue() << " ";
     ros::Time start, end;
     bool is_recording = false;
     output_cnt = 0;
@@ -230,8 +280,7 @@ int main(int argc, char const *argv[])
             // If time is outside of window.
             if (!first_time and !(start <= t and t < end))
             {
-                // std::cout << " -- dumping both files (" << output_image_file_arg.getValue() + std::to_string(output_cnt) << ")";
-                write_data(output_image_file_arg.getValue(), output_pose_file_arg.getValue(), output_cnt);
+                write_data(output_image_path_string, output_pose_path_string, output_cnt);
                 is_recording = false;
             }
 
@@ -242,13 +291,11 @@ int main(int argc, char const *argv[])
                 end = t + recording_duration;
                 is_recording = true;
                 first_time = false;
-                // std::cout << "opening window from " << start << " to " << end;
             }
         }
 
         if (m.getTopic() == image_topic || ("/" + m.getTopic() == image_topic))
         {
-            // std::cout << " -- reading image";
             sensor_msgs::Image::ConstPtr image = m.instantiate<sensor_msgs::Image>();
             if (image != NULL)
             {
@@ -258,20 +305,18 @@ int main(int argc, char const *argv[])
 
         if (m.getTopic() == pose_topic || ("/" + m.getTopic() == pose_topic))
         {
-            // std::cout << " -- reading pose";
             geometry_msgs::PoseWithCovarianceStamped::ConstPtr pose = m.instantiate<geometry_msgs::PoseWithCovarianceStamped>();
             if (pose != NULL)
             {
                 pose_sub.newMessage(pose);
             }
         }
-        // std::cout << std::endl;
     }
     bag.close();
 
     // Output the rest.
     if (not create_single_files)
     {
-        write_data(output_image_path, output_pose_path, output_cnt);
+        write_data(output_image_path_string, output_pose_path_string, output_cnt);
     }
 }
