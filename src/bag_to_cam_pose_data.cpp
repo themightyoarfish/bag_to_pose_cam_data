@@ -43,6 +43,7 @@ std::vector<double> pose_data;
 bool create_single_files = false;
 std::string output_image_path_string;
 std::string output_pose_path_string;
+bool export_as_float = false;
 int output_cnt;
 
 
@@ -61,7 +62,15 @@ void write_data(const std::string& output_image_path, const std::string& output_
 
 
     // Output the npy files
-    npy::SaveArrayAsNumpy(ss_img.str(), false, img_shape.size(), &img_shape[0], img_data);
+    if (export_as_float)
+    {
+        std::vector<float> float_image(std::begin(img_data), std::end(img_data));
+        npy::SaveArrayAsNumpy(ss_img.str(), false, img_shape.size(), &img_shape[0], float_image);
+    }
+    else
+    {
+        npy::SaveArrayAsNumpy(ss_img.str(), false, img_shape.size(), &img_shape[0], img_data);
+    }
     npy::SaveArrayAsNumpy(ss_pose.str(), false, pose_shape.size(), &pose_shape[0], pose_data);
     output_cnt++;
     img_shape.clear();
@@ -87,6 +96,7 @@ void callback(
     }
     // Increase number of images in shape
     img_shape[0]++;
+
     // Add image to data array
     img_data.insert(std::end(img_data), std::begin(image->data), std::end(image->data));
 
@@ -178,6 +188,11 @@ int main(int argc, char const *argv[])
         "create_single_files",
         "A switch that will overwrite the split_after arg and output all data points in single files."
     );
+    SwitchArg export_as_float_arg(
+        "x",
+        "export_as_float",
+        "If present image values will be exported as float isntead of uint8_t. Be aware of a quadrupled size tho."
+    );
 
     cmdline.add(input_bag_arg);
     cmdline.add(output_directory_arg);
@@ -185,6 +200,7 @@ int main(int argc, char const *argv[])
     cmdline.add(pose_topic_arg);
     cmdline.add(split_after_arg);
     cmdline.add(create_single_files_arg);
+    cmdline.add(export_as_float_arg);
     cmdline.parse(argc, argv);
 
 
@@ -263,6 +279,7 @@ int main(int argc, char const *argv[])
     output_pose_path_string  = output_pose_path.string();
 
     create_single_files = create_single_files_arg.getValue();
+    export_as_float = export_as_float_arg.getValue();
 
     ros::Duration recording_duration(split_after_arg.getValue(), 0.0);
     ros::Time start, end;
